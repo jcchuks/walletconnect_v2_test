@@ -40,43 +40,15 @@ import 'package:app/src/walletconnect/models/waku_subscribe_response.dart';
 import 'package:app/src/walletconnect/models/waku_subscription_request.dart';
 import 'package:app/src/walletconnect/models/waku_unsubscribe_request.dart';
 import 'package:cryptography/cryptography.dart';
-import 'package:uuid/uuid.dart';
 import 'package:web3dart/crypto.dart';
-// import 'package:wallet_connect/models/ethereum/wc_ethereum_sign_message.dart';
-// import 'package:wallet_connect/models/ethereum/wc_ethereum_transaction.dart';
-// import 'package:wallet_connect/models/exception/exceptions.dart';
-// import 'package:wallet_connect/models/jsonrpc/json_rpc_error.dart';
-// import 'package:wallet_connect/models/jsonrpc/json_rpc_error_response.dart';
-// import 'package:wallet_connect/models/jsonrpc/json_rpc_request.dart';
-// import 'package:wallet_connect/models/jsonrpc/json_rpc_response.dart';
-// import 'package:wallet_connect/models/message_type.dart';
-// import 'package:wallet_connect/models/session/wc_approve_session_response.dart';
-// import 'package:wallet_connect/models/session/wc_session.dart';
-// import 'package:wallet_connect/models/session/wc_session_request.dart';
-// import 'package:wallet_connect/models/session/wc_session_update.dart';
-// import 'package:wallet_connect/models/wc_encryption_payload.dart';
-// import 'package:wallet_connect/models/wc_method.dart';
-// import 'package:wallet_connect/models/wc_peer_meta.dart';
-// import 'package:wallet_connect/models/wc_socket_message.dart';
-// import 'package:wallet_connect/wc_cipher.dart';
-// import 'package:wallet_connect/wc_session_store.dart';
-// import 'package:web3dart/crypto.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-// import "wc_session2.dart";
-
-// typedef SessionRequest = void Function(int id, WCPeerMeta peerMeta);
-// typedef SocketError = void Function(dynamic message);
-// typedef SocketClose = void Function(int? code, String? reason);
-// typedef EthSign = void Function(int id, WCEthereumSignMessage message);
-// typedef EthTransaction = void Function(
-//     int id, WCEthereumTransaction transaction);
-// typedef CustomRequest = void Function(int id, String payload);
 
 typedef void EventCallBack(Map<String, dynamic> jsonRpcParams);
 
 class Events {
   static int ingressJsonRpcId = 1;
   static int egressJsonRpcId = 2;
+
   static const String wcPairingApprove = "wc_pairingApprove";
   static const String wcPairingUpdate = "wc_pairingUpdate";
   static const String wcPairingReject = "wc_pairingReject";
@@ -163,7 +135,10 @@ class Events {
   static void _onWcPairingDelete(
       {required JsonRpcRequest payload,
       required WcLibCore core,
-      EventCallBack? callBack}) {}
+      EventCallBack? callBack}) {
+    core.publish(
+        message: jsonEncode(payload), topic: core.state.pairingSettled.topic);
+  }
 
   static Future<void> _onWcPairingPayload(
       {required JsonRpcRequest payload,
@@ -174,11 +149,11 @@ class Events {
     JsonRpcRequest jsonRpcRequest = JsonRpcRequest(
         method: wcPairingPayload, params: Params(data: payload.paramsAsJson()));
     String encodedJsonRpcRequest = jsonEncode(jsonRpcRequest);
-
+    log(encodedJsonRpcRequest);
     await core.publish(
         message: encodedJsonRpcRequest,
         topic: state.sessionProposal.signal.params.topic,
-        shouldEncrypt: true);
+        shouldEncrypt: core.state.isPariringSettled);
   }
 
   static void _onWcPairingPing(
@@ -383,6 +358,7 @@ class Helpers {
                 state.pairingProposal.pairingProposedPermissions),
         expiry: pairingSuccessResponse.expiry,
         state: pairingSuccessResponse.state);
+    core.state.isPariringSettled = true;
     log("Pairing Settled");
   }
 
@@ -398,7 +374,7 @@ class Helpers {
     var publicKey = state.pairingProposal.pairingProposer!.publicKey;
     var self = SessionParticipant(
         publicKey: publicKey,
-        appMetadata: state.sessionProposal.sessionProposer!.appMetadata);
+        appMetadata: state.sessionProposal.proposer!.metadata);
     assert(sessionSuccessResponse.topic ==
         topic); //if fails, know sharedKey is invalid
 
@@ -415,8 +391,7 @@ class Helpers {
       permissions: SessionPermissions(
           pairingPermissionsController:
               SessionPermissionsController(publicKey: publicKey),
-          sessionProposedPermissions:
-              state.sessionProposal.sessionProposedPermissions),
+          sessionProposedPermissions: state.sessionProposal.permissions),
     );
   }
 
@@ -486,6 +461,24 @@ class Helpers {
     return "${secret.nonce},$publicKey,$hexMac,${secret.cipherText}";
   }
 
+//hack - if works, walletconnect team may need to format outputs.
+  static String getCommaSeparatedEncryptedDataAsHexString(
+      {required String data}) {
+    int nonceEnds = data.indexOf("]") + 1;
+    int publicKeyEnds = data.indexOf(",", nonceEnds + 1) + 1;
+    int macEnds = data.indexOf(",", publicKeyEnds + 1) + 1;
+    int cipherBegins = macEnds + 1;
+    String nonceStr = data.substring(0, nonceEnds);
+    List<int> nonceBytes = (jsonDecode(nonceStr) as List<dynamic>).cast<int>();
+    String macStr = data.substring(publicKeyEnds + 1, macEnds);
+    String publicKeyStr = data.substring(nonceEnds + 1, publicKeyEnds);
+    String cipherStr = data.substring(macEnds + 1);
+    List<int> cipherBytes = (jsonDecode(nonceStr) as List<dynamic>).cast<int>();
+    var nonceHex = bytesToHex(nonceBytes);
+    var cipherHex = bytesToHex(cipherBytes);
+    return '$nonceHex,$publicKeyStr,$macStr,$cipherHex';
+  }
+
   static Future<String> decrypt(
       {required String sharedKey, required String message}) async {
     String nonce, publicKey, macStr, cipherText = '';
@@ -548,6 +541,7 @@ class Helpers {
     final messageBytes =
         await algorithm.decrypt(secretBox, secretKey: decryptionSecretKey);
     final decodedPayload = utf8.decode(messageBytes);
+
     return decodedPayload;
   }
 
@@ -628,6 +622,17 @@ class WcLibCore {
   }
 
   disconnect({required String topic}) {
+    state.reset();
+    if (state.isPariringSettled) {
+      JsonRpcRequest jsonRpcRequest = JsonRpcRequest(
+          method: Events.wcPairingDelete,
+          params: Params(data: Reason(reason: "End pairing").toJson()));
+      //required JsonRpcRequest payload,
+      // required WcLibCore core,
+      // EventCallBack? callBack
+      Events.wcEvents[Events.wcPairingDelete]!(
+          payload: jsonRpcRequest, core: state, callBack: null);
+    }
     unsubscribe(topic: topic);
     _isConnected = false;
     _socketSink!.close(WebSocketStatus.normalClosure);
@@ -681,14 +686,23 @@ class WcLibCore {
     return clientCallbacks![method];
   }
 
+  Future<String> decryptMessage({required String message}) async {
+    message = await Helpers.decrypt(
+        sharedKey: state.pairingSettled.sharedKey, message: message);
+    return message;
+  }
+
   void _onWakuSubscriptionRequest(
-      {required Map<String, dynamic> wakuSubscriptionJsonMap}) {
+      {required Map<String, dynamic> wakuSubscriptionJsonMap}) async {
     WakuSubscriptionRequest wakuSubscriptionRequest =
         WakuSubscriptionRequest.fromJson(wakuSubscriptionJsonMap);
 
-    //check whether to decrypt before decoding - Track state
-    Map<String, dynamic> payload = decodeReceivedJsonRpcMessage(
-        message: wakuSubscriptionRequest.params!.data!.message);
+    String message = wakuSubscriptionRequest.params!.data!.message;
+
+    //noisy channel - paring msgs still come in after pairing setllement
+    Map<String, dynamic> payload =
+        await decodeReceivedJsonRpcMessage(message: message);
+
     String subId = wakuSubscriptionRequest.params!.id;
     assert(wakuSubscriptionId == subId);
     log("Received payload");
@@ -696,13 +710,11 @@ class WcLibCore {
     // type JsonRpcResponse = JsonRpcResult | JsonRpcError;
     JsonRpcRequest wcJsonRpcPayload = JsonRpcRequest.fromJson(payload);
 
-    if (Events.wcEvents[wcJsonRpcPayload.method] is Function) {
-      //JsonRpcRequest payload, required State state, required Network network, EventCallBack? callBack
-      Events.wcEvents[wcJsonRpcPayload.method]!(
-          payload: wcJsonRpcPayload,
-          core: this,
-          callBack: getClientCallBack(wcJsonRpcPayload.method));
-    }
+    //JsonRpcRequest payload, required State state, required Network network, EventCallBack? callBack
+    Events.wcEvents[wcJsonRpcPayload.method]!(
+        payload: wcJsonRpcPayload,
+        core: this,
+        callBack: getClientCallBack(wcJsonRpcPayload.method));
   }
 
   sendPairingAck(JsonRpcResult message, String topic) {
@@ -753,9 +765,19 @@ class WcLibCore {
     );
   }
 
-  Map<String, dynamic> decodeReceivedJsonRpcMessage({required String message}) {
+  Future<Map<String, dynamic>> decodeReceivedJsonRpcMessage(
+      {required String message}) async {
     String jsonString = utf8.decode(hexToBytes(message));
     log("Decoded Received Json string");
+
+    //@Todo is there a better way to know encrypted data - tags?
+    if (state.isPariringSettled && !jsonString.startsWith("{")) {
+      log("receieved encrypted msg ");
+      message =
+          Helpers.getCommaSeparatedEncryptedDataAsHexString(data: message);
+      log(message);
+      jsonString = await decryptMessage(message: message);
+    }
     log(jsonString);
     return jsonDecode(jsonString);
   }
@@ -771,12 +793,25 @@ class State {
   late PairingFailureResponse pairingFailureResponse;
   late SessionProposal sessionProposal;
   late SessionSettled sessionSettled;
+  bool isSessionSettled = false;
+  bool isPariringSettled = false;
 
   State(
       {required this.uriParameters,
       required this.appMetadata,
       required this.pairingSignal,
       required this.keyPair});
+
+  reset() {
+    pairingSettled = PairingSettled(topic: '', sharedKey: '');
+    sessionSettled = SessionSettled(topic: '');
+    sessionProposal = SessionProposal(
+        topic: '', signal: SessionSignal(params: Sequence(topic: '')), ttl: 0);
+    this.isPariringSettled = false;
+    this.isSessionSettled = false;
+    this.pairingProposal = PairingProposal(topic: '');
+    this.pairingFailureResponse = PairingFailureResponse();
+  }
 }
 
 class BlockchainId {
@@ -850,7 +885,7 @@ class WcClient {
       chains.add(chain.name);
       chainMethods.addAll(BlockChainIds.getChainMethods(chain: chain));
     }
-    log(chainMethods.first.toString());
+
     State state = core.state;
     var permissions = SessionProposedPermissions(
         blockchain: Blockchain(chains: chains),
@@ -858,12 +893,12 @@ class WcClient {
     var sessionProposal = SessionProposal(
         topic: state.pairingSettled.topic,
         relay: state.pairingSettled.relay,
-        sessionProposedPermissions: permissions,
-        sessionProposer: SessionProposer(
+        permissions: permissions,
+        proposer: SessionProposer(
             publicKey: state.pairingSettled.self!
                 .publicKey!, //should throw error if not exists
             controller: state.uriParameters.controller,
-            appMetadata: state.appMetadata),
+            metadata: state.appMetadata),
         signal:
             SessionSignal(params: Sequence(topic: state.pairingProposal.topic)),
         ttl: 8640);
@@ -911,7 +946,6 @@ class WcClient {
 //   // ---------- Events ----------------------------------------------- //
 
 }
-
 
 // class WCClient {
 //   late WebSocketChannel _webSocket;

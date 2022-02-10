@@ -34,11 +34,11 @@ class WalletConnectProvider extends ChangeNotifier {
   String peerId = Uuid().v4();
   int requestId = DateTime.now().microsecondsSinceEpoch;
 
-  get name => "Hieros NFT View";
+  get name => "Test Test";
 
-  get url => "https://www.thehieros.com/";
+  get url => "https://www.google.com/";
 
-  get description => "Display your NFT collections";
+  get description => "Working Sample";
   String outBandUri = '';
 
   bool isInitialized = false;

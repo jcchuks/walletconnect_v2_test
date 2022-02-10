@@ -3,24 +3,24 @@ import 'app_metadata.dart';
 class SessionProposer {
   String publicKey;
   bool controller;
-  AppMetadata? appMetadata;
+  AppMetadata? metadata;
 
   SessionProposer(
-      {required this.publicKey, required this.controller, this.appMetadata});
+      {required this.publicKey, required this.controller, this.metadata});
 
   factory SessionProposer.fromJson(Map<String, dynamic> json) {
     return SessionProposer(
       publicKey: json['publicKey'] as String,
       controller: json['controller'] as bool,
-      appMetadata: json['AppMetadata'] == null
+      metadata: json['metadata'] == null
           ? null
-          : AppMetadata.fromJson(json['AppMetadata'] as Map<String, dynamic>),
+          : AppMetadata.fromJson(json['metadata'] as Map<String, dynamic>),
     );
   }
 
   Map<String, dynamic> toJson() => {
         'publicKey': publicKey,
         'controller': controller,
-        'AppMetadata': appMetadata?.toJson(),
+        'metadata': metadata?.toJson(),
       };
 }

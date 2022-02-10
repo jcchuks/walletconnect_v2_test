@@ -36,5 +36,5 @@ class JsonRpcRequest {
         'params': params?.toJson(),
       };
 
-  Map<String, dynamic> paramsAsJson() => {'params': params?.toJson()};
+  Map<String, dynamic> paramsAsJson() => params?.toJson() ?? {};
 }

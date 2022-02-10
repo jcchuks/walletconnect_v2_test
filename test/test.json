@@ -1,0 +1,51 @@
+{
+  "id": 2,
+  "jsonrpc": "2.0",
+  "method": "waku_publish",
+  "params": {
+    "topic": "0254a53bd963e490cddebcf50401359934ddf34f2f674b61aefd7c8f8d6f1058",
+    "message": {
+      "id": 0,
+      "jsonrpc": "2.0",
+      "method": "wc_pairingPayload",
+      "params": {
+        "request": {
+          "method": "wc_sessionPropose",
+          "params": {
+            "topic": "48e10cbe95045be3550527b3bce7fb7ac11954376f6068484454187b20704b3a",
+            "relay": { "protocol": "waku", "params": null },
+            "proposer": {
+              "publicKey": "fd8314bd1de46ea29c0c622b4b09128125747d986b0dfa83d6846054dda8be26",
+              "controller": false,
+              "metadata": {
+                "name": "Test Test",
+                "description": "Working Sample",
+                "url": "https://www.google.com/",
+                "icons": ["https://nodejs.org/static/images/logo.svg"]
+              }
+            },
+            "signal": {
+              "method": "pairing",
+              "topic": {
+                "topic": "0254a53bd963e490cddebcf50401359934ddf34f2f674b61aefd7c8f8d6f1058"
+              }
+            },
+            "permissions": {
+              "blockchain": { "chains": ["eip155:1"] },
+              "jsonrpc": {
+                "methods": [
+                  "eth_sendTransaction",
+                  "eth_signTransaction",
+                  "eth_sign",
+                  "personal_sign"
+                ]
+              },
+              "notifications": null
+            },
+            "ttl": 8640
+          }
+        }
+      }
+    }
+  }
+}

@@ -7,17 +7,17 @@ import 'session_proposer.dart';
 class SessionProposal {
   String topic;
   Relay? relay;
-  SessionProposer? sessionProposer;
+  SessionProposer? proposer;
   SessionSignal signal;
-  SessionProposedPermissions? sessionProposedPermissions;
+  SessionProposedPermissions? permissions;
   int ttl;
 
   SessionProposal({
     required this.topic,
     this.relay,
-    this.sessionProposer,
+    this.proposer,
     required this.signal,
-    this.sessionProposedPermissions,
+    this.permissions,
     required this.ttl,
   });
 
@@ -27,15 +27,14 @@ class SessionProposal {
       relay: json['relay'] == null
           ? null
           : Relay.fromJson(json['relay'] as Map<String, dynamic>),
-      sessionProposer: json['SessionProposer'] == null
+      proposer: json['proposer'] == null
           ? null
-          : SessionProposer.fromJson(
-              json['SessionProposer'] as Map<String, dynamic>),
+          : SessionProposer.fromJson(json['proposer'] as Map<String, dynamic>),
       signal: SessionSignal.fromJson(json['signal'] as Map<String, dynamic>),
-      sessionProposedPermissions: json['SessionProposedPermissions'] == null
+      permissions: json['permissions'] == null
           ? null
           : SessionProposedPermissions.fromJson(
-              json['SessionProposedPermissions'] as Map<String, dynamic>),
+              json['permissions'] as Map<String, dynamic>),
       ttl: json['ttl'] as int,
     );
   }
@@ -43,9 +42,9 @@ class SessionProposal {
   Map<String, dynamic> toJson() => {
         'topic': topic,
         'relay': relay?.toJson(),
-        'SessionProposer': sessionProposer?.toJson(),
+        'proposer': proposer?.toJson(),
         'signal': signal.toJson(),
-        'SessionProposedPermissions': sessionProposedPermissions?.toJson(),
+        'permissions': permissions?.toJson(),
         'ttl': ttl,
       };
 }
