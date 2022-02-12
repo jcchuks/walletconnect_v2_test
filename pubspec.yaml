@@ -20,7 +20,10 @@ dependencies:
   web3dart: ^2.3.0 
   qr_flutter: ^4.0.0
   uuid: ^3.0.5
-  crypto: ^3.0.1
+  # crypto: ^3.0.1
+  cryptography: ^2.0.5
+  convert: ^3.0.1
+
 
 
 

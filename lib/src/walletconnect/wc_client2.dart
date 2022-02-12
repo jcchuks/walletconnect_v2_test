@@ -39,6 +39,8 @@ import 'package:app/src/walletconnect/models/waku_subscribe_request.dart';
 import 'package:app/src/walletconnect/models/waku_subscribe_response.dart';
 import 'package:app/src/walletconnect/models/waku_subscription_request.dart';
 import 'package:app/src/walletconnect/models/waku_unsubscribe_request.dart';
+import 'package:convert/convert.dart';
+// import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:web3dart/crypto.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -91,7 +93,7 @@ class Events {
   static void _onWcPairingApprove(
       {required JsonRpcRequest payload,
       required WcLibCore core,
-      EventCallBack? callBack}) {
+      EventCallBack? callBack}) async {
     if (Helpers.isFailedResponse(payload.params!.data)) {
       //call failure method
       return;
@@ -100,10 +102,11 @@ class Events {
     State state = core.state;
     PairingSuccessResponse pairingSuccessResponse =
         PairingSuccessResponse.fromJson(payload.params!.data!);
-    Helpers.pairingSettlement(
+    String derivedTopic = await Helpers.pairingSettlement(
         core: core, pairingSuccessResponse: pairingSuccessResponse);
 
     _sendWcEventSuccessResponse(core: core, topic: state.pairingProposal.topic);
+    core.subscribe(topic: derivedTopic);
   }
 
   static void _onWcPairingReject(
@@ -152,8 +155,7 @@ class Events {
     log(encodedJsonRpcRequest);
     await core.publish(
         message: encodedJsonRpcRequest,
-        topic: state.sessionProposal.signal.params.topic,
-        shouldEncrypt: core.state.isPariringSettled);
+        topic: state.sessionProposal.signal.params.topic);
   }
 
   static void _onWcPairingPing(
@@ -330,7 +332,7 @@ class Helpers {
     return bytesToHex(topic);
   }
 
-  static void pairingSettlement(
+  static Future<String> pairingSettlement(
       {required WcLibCore core,
       required PairingSuccessResponse pairingSuccessResponse}) async {
     State state = core.state;
@@ -359,7 +361,11 @@ class Helpers {
         expiry: pairingSuccessResponse.expiry,
         state: pairingSuccessResponse.state);
     core.state.isPariringSettled = true;
-    log("Pairing Settled");
+    Map<String, Map<SimpleKeyPair, PairingSettled>> other = {
+      topic: {core.state.keyPair: core.state.pairingSettled}
+    };
+    core.state.settledPairingsMap.addAll(other);
+    return topic;
   }
 
   static void sessionSettlement(
@@ -393,6 +399,14 @@ class Helpers {
               SessionPermissionsController(publicKey: publicKey),
           sessionProposedPermissions: state.sessionProposal.permissions),
     );
+    log("Session Settled");
+    log(topic);
+    log(core.state.settledPairingsMap.keys.first);
+    core.state.isSessionSettled = true;
+    Map<String, Map<SimpleKeyPair, PairingSettled>> other = {
+      topic: {core.state.keyPair: core.state.pairingSettled}
+    };
+    core.state.settledSessionsMap.addAll(other);
   }
 
   static void removeSettledSession({required WcLibCore core}) {
@@ -431,7 +445,7 @@ class Helpers {
       {required String sharedKey,
       required String message,
       required String publicKey}) async {
-    List<int> sharedKeyBytes = hexToBytes(sharedKey);
+    List<int> sharedKeyBytes = utf8.encode(sharedKey);
 
     Sha512 encAuthHash = Sha512();
     Hash encAuthKeys = await encAuthHash.hash(sharedKeyBytes);
@@ -450,33 +464,39 @@ class Helpers {
         await algorithm.newSecretKeyFromBytes(authenticationKeys);
 
     var messageBytes = utf8.encode(message);
-    final secret =
-        await algorithm.encrypt(messageBytes, secretKey: encryptionSecretKey);
+    var nonce = algorithm.newNonce();
+
+    final secret = await algorithm.encrypt(messageBytes,
+        secretKey: encryptionSecretKey, nonce: nonce);
 
     Hmac mac = Hmac.sha256();
-    Mac messageMac = await mac.calculateMac(secret.cipherText,
+    Mac messageMac = await mac.calculateMac(
+        nonce + hex.decode(publicKey) + secret.cipherText,
         secretKey: authenticationSecretKey);
-    String hexMac = String.fromCharCodes(messageMac.bytes);
+    String hexMac = hex.encode(messageMac.bytes);
 
-    return "${secret.nonce},$publicKey,$hexMac,${secret.cipherText}";
+    var data =
+        "${hex.encode(nonce)}$publicKey$hexMac${hex.encode(secret.cipherText)}";
+    log(data);
+    return data;
   }
 
 //hack - if works, walletconnect team may need to format outputs.
   static String getCommaSeparatedEncryptedDataAsHexString(
       {required String data}) {
-    int nonceEnds = data.indexOf("]") + 1;
-    int publicKeyEnds = data.indexOf(",", nonceEnds + 1) + 1;
-    int macEnds = data.indexOf(",", publicKeyEnds + 1) + 1;
-    int cipherBegins = macEnds + 1;
+    log(data);
+    int nonceEnds = 32;
+    int publicKeyEnds = 96;
+    int macEnds = 160;
+
     String nonceStr = data.substring(0, nonceEnds);
-    List<int> nonceBytes = (jsonDecode(nonceStr) as List<dynamic>).cast<int>();
-    String macStr = data.substring(publicKeyEnds + 1, macEnds);
-    String publicKeyStr = data.substring(nonceEnds + 1, publicKeyEnds);
-    String cipherStr = data.substring(macEnds + 1);
-    List<int> cipherBytes = (jsonDecode(nonceStr) as List<dynamic>).cast<int>();
-    var nonceHex = bytesToHex(nonceBytes);
-    var cipherHex = bytesToHex(cipherBytes);
-    return '$nonceHex,$publicKeyStr,$macStr,$cipherHex';
+
+    String publicKeyStr = data.substring(nonceEnds, publicKeyEnds);
+    String macStr = data.substring(publicKeyEnds, macEnds);
+    String cipherStr = data.substring(macEnds);
+    var msg = '$nonceStr,$publicKeyStr,$macStr,$cipherStr';
+    log(msg);
+    return msg;
   }
 
   static Future<String> decrypt(
@@ -519,24 +539,25 @@ class Helpers {
     macStr = msgArray[2];
     cipherText = msgArray[3];
 
-    var cipherTextBytes = utf8.encode(cipherText);
-    var macStrBytes = utf8.encode(macStr);
+    var cipherTextBytes = hex.decode(cipherText);
+    var macStrBytes = hex.decode(macStr);
 
     //------------ verify mac
     Hmac mac = Hmac.sha256();
-    Mac messageMac = await mac.calculateMac(cipherTextBytes,
+    Mac messageMac = await mac.calculateMac(
+        hex.decode(nonce) + hex.decode(publicKey) + cipherTextBytes,
         secretKey: authenticationSecretKey);
 
-    if (messageMac.bytes.hashCode != macStrBytes.hashCode) {
+    if (hex.encode(messageMac.bytes) != macStr) {
       throw WcException(
           type: WcErrorType.invalidValue,
           msg:
-              "got mac string as ${utf8.decode(messageMac.bytes)}, received '$message' with invalid mac");
+              "got mac string as ${hex.encode(messageMac.bytes)}, received '$macStr' with invalid mac");
     }
 
     //---------- decrypt cipherText
     SecretBox secretBox =
-        SecretBox(cipherTextBytes, nonce: utf8.encode(nonce), mac: Mac.empty);
+        SecretBox(cipherTextBytes, nonce: hex.decode(nonce), mac: Mac.empty);
 
     final messageBytes =
         await algorithm.decrypt(secretBox, secretKey: decryptionSecretKey);
@@ -657,11 +678,8 @@ class WcLibCore {
   }
 
   publish(
-      {required String message,
-      required String topic,
-      int ttl = 86400,
-      bool shouldEncrypt = false}) async {
-    if (shouldEncrypt) {
+      {required String message, required String topic, int ttl = 86400}) async {
+    if (state.settledPairingsMap.containsKey(topic)) {
       message = await Helpers.encrypt(
           sharedKey: state.pairingSettled.sharedKey,
           message: message,
@@ -674,8 +692,8 @@ class WcLibCore {
                 WakuPublishParams(message: message, topic: topic, ttl: ttl))
         .toJson();
     String data = jsonEncode(jsonData);
-    log("publishing response");
-    log(data);
+    // log("publishing response");
+    // log(data);
     _send(data: data);
   }
 
@@ -697,14 +715,16 @@ class WcLibCore {
     WakuSubscriptionRequest wakuSubscriptionRequest =
         WakuSubscriptionRequest.fromJson(wakuSubscriptionJsonMap);
 
-    String message = wakuSubscriptionRequest.params!.data!.message;
+    Map<String, dynamic> payload = await decodeReceivedJsonRpcMessage(
+        message: wakuSubscriptionRequest.params.data.message,
+        topic: wakuSubscriptionRequest.params.data.topic);
 
-    //noisy channel - paring msgs still come in after pairing setllement
-    Map<String, dynamic> payload =
-        await decodeReceivedJsonRpcMessage(message: message);
-
-    String subId = wakuSubscriptionRequest.params!.id;
-    assert(wakuSubscriptionId == subId);
+    String subId = wakuSubscriptionRequest.params.id;
+    if (wakuSubscriptionId != subId) {
+      log("Subscription ID received  " + subId + "want " + wakuSubscriptionId);
+      return;
+    }
+    ;
     log("Received payload");
     log(payload.toString());
     // type JsonRpcResponse = JsonRpcResult | JsonRpcError;
@@ -715,11 +735,6 @@ class WcLibCore {
         payload: wcJsonRpcPayload,
         core: this,
         callBack: getClientCallBack(wcJsonRpcPayload.method));
-  }
-
-  sendPairingAck(JsonRpcResult message, String topic) {
-    String messageToString = jsonEncode(message.toJson());
-    publish(message: messageToString, topic: topic);
   }
 
   _send({required String data}) {
@@ -766,16 +781,16 @@ class WcLibCore {
   }
 
   Future<Map<String, dynamic>> decodeReceivedJsonRpcMessage(
-      {required String message}) async {
-    String jsonString = utf8.decode(hexToBytes(message));
-    log("Decoded Received Json string");
-
-    //@Todo is there a better way to know encrypted data - tags?
-    if (state.isPariringSettled && !jsonString.startsWith("{")) {
+      {required String message, required String topic}) async {
+    var recode = hex.decode(message);
+    String jsonString = String.fromCharCodes(recode);
+    // utf8.decode(hex.decode(message));
+    log("Decoded Received Json string  " + jsonString);
+    if (state.settledPairingsMap.containsKey(topic)) {
       log("receieved encrypted msg ");
       message =
           Helpers.getCommaSeparatedEncryptedDataAsHexString(data: message);
-      log(message);
+
       jsonString = await decryptMessage(message: message);
     }
     log(jsonString);
@@ -793,6 +808,13 @@ class State {
   late PairingFailureResponse pairingFailureResponse;
   late SessionProposal sessionProposal;
   late SessionSettled sessionSettled;
+
+  //Map Settled Topics to Keypairs and settled pairings data
+
+  Map<String, Map<SimpleKeyPair, PairingSettled>> settledPairingsMap = {};
+
+  Map<String, Map<SimpleKeyPair, PairingSettled>> settledSessionsMap = {};
+
   bool isSessionSettled = false;
   bool isPariringSettled = false;
 
@@ -900,7 +922,7 @@ class WcClient {
             controller: state.uriParameters.controller,
             metadata: state.appMetadata),
         signal:
-            SessionSignal(params: Sequence(topic: state.pairingProposal.topic)),
+            SessionSignal(params: Sequence(topic: state.pairingSettled.topic)),
         ttl: 8640);
 
     core.proposeSession(sessionProposal: sessionProposal);

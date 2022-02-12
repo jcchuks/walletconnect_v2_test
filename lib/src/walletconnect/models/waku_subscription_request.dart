@@ -20,16 +20,14 @@ class WakuSubsciptionData {
 
 class WakuSubsciptionParams {
   String id;
-  WakuSubsciptionData? data;
+  WakuSubsciptionData data;
 
   WakuSubsciptionParams({required this.id, required this.data});
 
   factory WakuSubsciptionParams.fromJson(Map<String, dynamic> json) {
     return WakuSubsciptionParams(
       id: json['id'] as String,
-      data: json['data'] == null
-          ? null
-          : WakuSubsciptionData.fromJson(json['data'] as Map<String, dynamic>),
+      data: WakuSubsciptionData.fromJson(json['data'] as Map<String, dynamic>),
     );
   }
 
@@ -40,23 +38,21 @@ class WakuSubscriptionRequest {
   int? id;
   String jsonrpc;
   String method;
-  WakuSubsciptionParams? params;
+  WakuSubsciptionParams params;
 
   WakuSubscriptionRequest(
       {this.id,
       this.jsonrpc = '2.0',
       this.method = 'waku_subscription',
-      this.params});
+      required this.params});
 
   factory WakuSubscriptionRequest.fromJson(Map<String, dynamic> json) {
     return WakuSubscriptionRequest(
       id: json['id'] as int?,
       jsonrpc: json['jsonrpc'] as String? ?? '2.0',
       method: json['method'] as String? ?? 'waku_subscription',
-      params: json['params'] == null
-          ? null
-          : WakuSubsciptionParams.fromJson(
-              json['params'] as Map<String, dynamic>),
+      params: WakuSubsciptionParams.fromJson(
+          json['params'] as Map<String, dynamic>),
     );
   }
 
@@ -64,6 +60,6 @@ class WakuSubscriptionRequest {
         'id': id,
         'jsonrpc': jsonrpc,
         'method': method,
-        'params': params?.toJson(),
+        'params': params.toJson(),
       };
 }
