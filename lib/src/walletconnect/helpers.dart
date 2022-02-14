@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:convert';
 import 'dart:developer';
 
 import 'package:app/src/walletconnect/models/json_rpc_request.dart';
