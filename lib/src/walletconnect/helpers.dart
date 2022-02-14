@@ -114,7 +114,6 @@ class Helpers {
                 state.pairingProposal.pairingProposedPermissions),
         expiry: pairingSuccessResponse.expiry,
         state: pairingSuccessResponse.state);
-    core.state.isPariringSettled = true;
     Map<String, Map<SimpleKeyPair, PairingSettled>> other = {
       topic: {core.state.keyPair: core.state.pairingSettled}
     };
@@ -156,7 +155,6 @@ class Helpers {
     log("Session Settled");
     log(topic);
     log(core.state.settledPairingsMap.keys.first);
-    core.state.isSessionSettled = true;
     Map<String, Map<SimpleKeyPair, PairingSettled>> other = {
       topic: {core.state.keyPair: core.state.pairingSettled}
     };

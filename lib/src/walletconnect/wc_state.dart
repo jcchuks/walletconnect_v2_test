@@ -27,9 +27,6 @@ class State {
 
   Map<String, Map<SimpleKeyPair, PairingSettled>> settledSessionsMap = {};
 
-  bool isSessionSettled = false;
-  bool isPariringSettled = false;
-
   State(
       {required this.uriParameters,
       required this.appMetadata,
@@ -41,9 +38,9 @@ class State {
     sessionSettled = SessionSettled(topic: '');
     sessionProposal = SessionProposal(
         topic: '', signal: SessionSignal(params: Sequence(topic: '')), ttl: 0);
-    this.isPariringSettled = false;
-    this.isSessionSettled = false;
-    this.pairingProposal = PairingProposal(topic: '');
-    this.pairingFailureResponse = PairingFailureResponse();
+    pairingProposal = PairingProposal(topic: '');
+    pairingFailureResponse = PairingFailureResponse();
+    settledPairingsMap.clear();
+    settledSessionsMap.clear();
   }
 }
