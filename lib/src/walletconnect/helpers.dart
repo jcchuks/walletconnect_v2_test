@@ -12,7 +12,7 @@ import 'package:app/src/walletconnect/models/session_participant.dart';
 import 'package:app/src/walletconnect/models/session_permissions.dart';
 import 'package:app/src/walletconnect/models/session_settled.dart';
 import 'package:app/src/walletconnect/models/session_success_response.dart';
-import 'package:app/src/walletconnect/wc_client2.dart';
+import 'package:app/src/walletconnect/wc_core.dart';
 import 'package:app/src/walletconnect/wc_errors.dart';
 import 'package:app/src/walletconnect/wc_events.dart';
 import 'package:app/src/walletconnect/wc_state.dart';
@@ -153,8 +153,8 @@ class Helpers {
           sessionProposedPermissions: state.sessionProposal.permissions),
     );
     log("Session Settled");
-    log(topic);
-    log(core.state.settledPairingsMap.keys.first);
+    // log(topic);
+    // log(core.state.settledPairingsMap.keys.first);
     Map<String, Map<SimpleKeyPair, PairingSettled>> other = {
       topic: {core.state.keyPair: core.state.pairingSettled}
     };

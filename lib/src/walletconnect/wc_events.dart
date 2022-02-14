@@ -12,7 +12,7 @@ import 'package:app/src/walletconnect/models/reason.dart';
 import 'package:app/src/walletconnect/models/result.dart';
 import 'package:app/src/walletconnect/models/session_request.dart';
 import 'package:app/src/walletconnect/models/session_success_response.dart';
-import 'package:app/src/walletconnect/wc_client2.dart';
+import 'package:app/src/walletconnect/wc_core.dart';
 import 'package:app/src/walletconnect/wc_state.dart';
 
 class Events {

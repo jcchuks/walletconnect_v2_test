@@ -1,3 +1,4 @@
+import 'package:app/src/walletconnect/chain_ids.dart';
 import 'package:app/src/walletconnect/models/app_metadata.dart';
 import 'package:app/src/walletconnect/wc_client2.dart';
 import 'package:app/src/walletconnect/wc_errors.dart';
