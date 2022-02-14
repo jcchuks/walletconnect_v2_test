@@ -23,6 +23,7 @@ dependencies:
   # crypto: ^3.0.1
   cryptography: ^2.0.5
   convert: ^3.0.1
+  flutter_dotenv: ^5.0.2
 
 
 
@@ -42,3 +43,4 @@ flutter:
   assets:
     # Add assets from the images directory to the application.
     - assets/images/
+    - .env

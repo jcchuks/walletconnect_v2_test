@@ -1,13 +1,21 @@
+import 'dart:convert';
+import 'dart:developer';
+
+import 'package:app/src/walletconnect/models/app_metadata.dart';
+
 class PairingState {
-  String? appMetadata;
+  AppMetadata? metadata;
 
-  PairingState({this.appMetadata});
+  PairingState({this.metadata});
 
-  factory PairingState.fromJson(Map<String, dynamic> json) => PairingState(
-        appMetadata: json['AppMetadata'] as String?,
-      );
+  factory PairingState.fromJson(Map<String, dynamic>? json) {
+    log(jsonEncode(json));
+    return PairingState(
+      metadata: AppMetadata.fromJson(json?['metadata']),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
-        'AppMetadata': appMetadata,
+        'metadata': metadata!.toJson(),
       };
 }

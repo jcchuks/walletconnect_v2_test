@@ -3,35 +3,23 @@ import 'dart:core';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:app/src/walletconnect/eth.dart';
+import 'package:app/src/walletconnect/helpers.dart';
 import 'package:app/src/walletconnect/models/app_metadata.dart';
 import 'package:app/src/walletconnect/models/blockchain.dart';
 import 'package:app/src/walletconnect/models/json_rpc_request.dart';
-import 'package:app/src/walletconnect/models/json_rpc_result.dart';
 import 'package:app/src/walletconnect/models/jsonrpc.dart';
-import 'package:app/src/walletconnect/models/pairing_failure_response.dart';
-import 'package:app/src/walletconnect/models/pairing_participant.dart';
-import 'package:app/src/walletconnect/models/pairing_permissions.dart';
 import 'package:app/src/walletconnect/models/pairing_proposal.dart';
-import 'package:app/src/walletconnect/models/pairing_proposed_permissions.dart';
 import 'package:app/src/walletconnect/models/pairing_proposer.dart';
 import 'package:app/src/walletconnect/models/pairing_proposer_params.dart';
-import 'package:app/src/walletconnect/models/pairing_settled.dart';
 import 'package:app/src/walletconnect/models/pairing_signal.dart';
-import 'package:app/src/walletconnect/models/pairing_success_response.dart';
 import 'package:app/src/walletconnect/models/params.dart';
 import 'package:app/src/walletconnect/models/reason.dart';
-import 'package:app/src/walletconnect/models/relay.dart';
-import 'package:app/src/walletconnect/models/result.dart';
 import 'package:app/src/walletconnect/models/sequence.dart';
-import 'package:app/src/walletconnect/models/session_participant.dart';
-import 'package:app/src/walletconnect/models/session_permissions.dart';
 import 'package:app/src/walletconnect/models/session_proposal.dart';
 import 'package:app/src/walletconnect/models/session_proposed_permissions.dart';
 import 'package:app/src/walletconnect/models/session_proposer.dart';
-import 'package:app/src/walletconnect/models/session_request.dart';
-import 'package:app/src/walletconnect/models/session_settled.dart';
 import 'package:app/src/walletconnect/models/session_signal.dart';
-import 'package:app/src/walletconnect/models/session_success_response.dart';
 import 'package:app/src/walletconnect/models/uri_parameters.dart';
 import 'package:app/src/walletconnect/models/waku_publish_request.dart';
 import 'package:app/src/walletconnect/models/waku_publish_response.dart';
@@ -39,555 +27,19 @@ import 'package:app/src/walletconnect/models/waku_subscribe_request.dart';
 import 'package:app/src/walletconnect/models/waku_subscribe_response.dart';
 import 'package:app/src/walletconnect/models/waku_subscription_request.dart';
 import 'package:app/src/walletconnect/models/waku_unsubscribe_request.dart';
+import 'package:app/src/walletconnect/wc_errors.dart';
+import 'package:app/src/walletconnect/wc_events.dart';
+import 'package:app/src/walletconnect/wc_state.dart';
 import 'package:convert/convert.dart';
-// import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:web3dart/crypto.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 typedef void EventCallBack(Map<String, dynamic> jsonRpcParams);
 
-class Events {
-  static int ingressJsonRpcId = 1;
-  static int egressJsonRpcId = 2;
-
-  static const String wcPairingApprove = "wc_pairingApprove";
-  static const String wcPairingUpdate = "wc_pairingUpdate";
-  static const String wcPairingReject = "wc_pairingReject";
-  static const String wcPairingUpgrade = "wc_pairingUpgrade";
-  static const String wcPairingDelete = "wc_pairingDelete";
-  static const String wcPairingPayload = "wc_pairingPayload";
-  static const String wcPairingPing = "wc_pairingPing";
-  static const String wcPairingNotification = "wc_pairingNotification";
-  static const String wcSessionPropose = "wc_sessionPropose";
-  static const String wcSessionApprove = "wc_sessionApprove";
-  static const String wcSessionReject = "wc_sessionReject";
-  static const String wcSessionUpdate = "wc_sessionUpdate";
-  static const String wcSessionUpgrade = "wc_sessionUpgrade";
-  static const String wcSessionDelete = "wc_sessionDelete";
-  static const String wcSessionPayload = "wc_sessionPayload";
-  static const String wcSessionPing = "wc_sessionPing";
-  static const String wcSessionNotification = "wc_sessionNotification";
-  static const String internalDummyMethod = "internalDummyMethod";
-
-  static final Map<String, Function> wcEvents = {
-    wcPairingApprove: _onWcPairingApprove,
-    wcPairingUpdate: _onWcPairingReject,
-    wcPairingReject: _onWcPairingUpdate,
-    wcPairingUpgrade: _onWcPairingUpgrade,
-    wcPairingDelete: _onWcPairingDelete,
-    wcPairingPayload: _onWcPairingPayload,
-    wcPairingPing: _onWcPairingPing,
-    wcPairingNotification: _onWcPairingNotification,
-    wcSessionPropose: onWcSessionPropose,
-    wcSessionApprove: _onWcSessionApprove,
-    wcSessionReject: _onWcSessionReject,
-    wcSessionUpdate: _onWcSessionUpdate,
-    wcSessionUpgrade: _onWcSessionUpgrade,
-    wcSessionDelete: _onWcSessionDelete,
-    wcSessionPayload: _onWcSessionPayload,
-    wcSessionPing: _onWcSessionPing,
-    wcSessionNotification: _onWcSessionNotification
-  };
-
-  static void _onWcPairingApprove(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) async {
-    if (Helpers.isFailedResponse(payload.params!.data)) {
-      //call failure method
-      return;
-    }
-    log("Handling pairing Approved");
-    State state = core.state;
-    PairingSuccessResponse pairingSuccessResponse =
-        PairingSuccessResponse.fromJson(payload.params!.data!);
-    String derivedTopic = await Helpers.pairingSettlement(
-        core: core, pairingSuccessResponse: pairingSuccessResponse);
-
-    _sendWcEventSuccessResponse(core: core, topic: state.pairingProposal.topic);
-    core.subscribe(topic: derivedTopic);
-  }
-
-  static void _onWcPairingReject(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {
-    State state = core.state;
-    Helpers.raiseExceptionOnEmotyOrInvalidJsonRpcRequestPayloadParams(
-        params: payload.params);
-    PairingFailureResponse reason =
-        PairingFailureResponse.fromJson(payload.params!.data!);
-    String topic = state.pairingProposal.topic;
-    core.state.pairingFailureResponse = reason;
-    Helpers.removePairingProposal(core);
-    _sendWcEventSuccessResponse(core: core, topic: topic);
-    callBack?.call(reason.toJson());
-  }
-
-  static void _onWcPairingUpdate(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {}
-
-  static void _onWcPairingUpgrade(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {}
-
-  static void _onWcPairingDelete(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {
-    core.publish(
-        message: jsonEncode(payload), topic: core.state.pairingSettled.topic);
-  }
-
-  static Future<void> _onWcPairingPayload(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) async {
-    State state = core.state;
-    assert(payload.method == internalDummyMethod);
-    JsonRpcRequest jsonRpcRequest = JsonRpcRequest(
-        method: wcPairingPayload, params: Params(data: payload.paramsAsJson()));
-    String encodedJsonRpcRequest = jsonEncode(jsonRpcRequest);
-    log(encodedJsonRpcRequest);
-    await core.publish(
-        message: encodedJsonRpcRequest,
-        topic: state.sessionProposal.signal.params.topic);
-  }
-
-  static void _onWcPairingPing(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {}
-
-  static void _onWcPairingNotification(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {}
-
-  static Future<void> onWcSessionPropose(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) async {
-    JsonRpcRequest sessionProposeRequest = JsonRpcRequest(
-        method: wcSessionPropose,
-        params: Params(data: core.state.sessionProposal.toJson()));
-
-    //for correctness - otherwise moving session req to onWcPairingPayload can be more efficient.
-    SessionRequest request = SessionRequest(
-        request: Params(data: sessionProposeRequest.methodAndParamsAsJson()));
-
-    await _onWcPairingPayload(
-        payload: JsonRpcRequest(
-            method: internalDummyMethod,
-            params: Params(data: request.toJson())),
-        core: core,
-        callBack: callBack);
-  }
-
-  static void _onWcSessionApprove(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {
-    if (payload.params?.data?.isEmpty ?? true) {
-      return;
-    }
-    State state = core.state;
-    SessionSuccessResponse sessionSuccessResponse =
-        SessionSuccessResponse.fromJson(payload.params!.data!);
-    Helpers.sessionSettlement(
-        core: core, sessionSuccessResponse: sessionSuccessResponse);
-    _sendWcEventSuccessResponse(
-        core: core, topic: state.sessionProposal.signal.params.topic);
-  }
-
-  static void _onWcSessionReject(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {}
-
-  static void _onWcSessionUpdate(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {}
-
-  static void _onWcSessionUpgrade(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {}
-
-  static void _onWcSessionDelete(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {
-    State state = core.state;
-    Reason reason = Reason(reason: "End Session");
-    Params params = Params(data: reason.toJson());
-    JsonRpcRequest jsonRpcRequest = JsonRpcRequest(
-        method: wcSessionDelete, params: params, id: egressJsonRpcId);
-    String encodedJsonRpcRequest = jsonEncode(jsonRpcRequest.toJson());
-
-    Helpers.removeSettledSession(core: core);
-
-    String topic = state.sessionSettled.topic;
-    core.publish(message: encodedJsonRpcRequest, topic: topic);
-    callBack?.call(params.toJson());
-  }
-
-  static void _onWcSessionPayload(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {}
-
-  static void _onWcSessionPing(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {}
-
-  static void _onWcSessionNotification(
-      {required JsonRpcRequest payload,
-      required WcLibCore core,
-      EventCallBack? callBack}) {}
-
-  static void _sendWcEventSuccessResponse(
-      {required WcLibCore core, required String topic}) {
-    JsonRpcResult jsonRpcResult = JsonRpcResult(
-        id: egressJsonRpcId,
-        result: Result(
-          resBool: true,
-        ));
-    String encodedJsonRpcRequest = jsonEncode(jsonRpcResult.toJson());
-    core.publish(message: encodedJsonRpcRequest, topic: topic);
-  }
-}
-
-enum WcErrorType { emptyValue, invalidValue, unknownOperation }
-
-class WcException implements Exception {
-  final WcErrorType type;
-  final String? msg;
-
-  WcException({required this.type, this.msg});
-
-  @override
-  String toString() => "WcException.$type: $msg";
-}
-
-class Helpers {
-  static void checkString(String? data, {String? msg}) {
-    if (data?.isEmpty ?? true) {
-      throw WcException(type: WcErrorType.emptyValue, msg: msg);
-    }
-  }
-
-  static String getOutBandUri({required State state}) {
-    String uri = Uri.encodeComponent(
-        state.pairingSignal.pairingProposerParams!.uri ?? '');
-    checkString(uri, msg: "getOutBandUri - uri empty");
-    var rel = '{"protocol":"${state.uriParameters.relay!.protocol}"}';
-    rel = Uri.encodeComponent(rel);
-    var query =
-        '/?&publicKey=${state.uriParameters.publicKey}&relay=$rel&controller=${state.uriParameters.controller}';
-
-    uri =
-        "wc:${state.uriParameters.topic}@${state.uriParameters.version}?bridge=$uri$query";
-
-    log(uri);
-    return uri;
-  }
-
-  static String getRelayUri({required State state}) {
-    String uri =
-        "${state.pairingSignal.pairingProposerParams!.uri ?? ''}&version=${state.uriParameters.version}";
-    checkString(uri, msg: "getRelayUri - uri empty");
-    uri = uri.replaceAll("https://", "wss://");
-    return uri;
-  }
-
-  static Future<SecretKey> getSharedKeyForPairingSettlement(
-      {required KeyPair keyPair, required String responderPublicKey}) async {
-    final algorithm = X25519();
-    SimplePublicKey remotePublicKey = SimplePublicKey(
-        hexToBytes(responderPublicKey),
-        type: KeyPairType.x25519);
-    SecretKey sharedKey = await algorithm.sharedSecretKey(
-        keyPair: keyPair, remotePublicKey: remotePublicKey);
-    return sharedKey;
-  }
-
-  static Future<String> sharedKeyString({required SecretKey secretKey}) async {
-    List<int> bytes = await secretKey.extractBytes();
-    return bytesToHex(bytes);
-  }
-
-  static Future<String> getTopicOnSettlement(
-      {required SecretKey sharedKey}) async {
-    //returns sha256 hash of the shared key.
-
-    var topicSha = await Sha256().hash(await sharedKey.extractBytes());
-    var topic = topicSha.bytes;
-    return bytesToHex(topic);
-  }
-
-  static Future<String> pairingSettlement(
-      {required WcLibCore core,
-      required PairingSuccessResponse pairingSuccessResponse}) async {
-    State state = core.state;
-    SecretKey sharedKey = await getSharedKeyForPairingSettlement(
-        keyPair: core.state.keyPair,
-        responderPublicKey: pairingSuccessResponse.responder!.publicKey!);
-    var topic = await getTopicOnSettlement(sharedKey: sharedKey);
-    var publicKey = state.pairingProposal.pairingProposer!.publicKey;
-    var self = PairingParticipant(publicKey: publicKey);
-    // log("pairingSuccessResponse.topic :" + pairingSuccessResponse.topic!);
-    log("Generated topic :" + topic);
-    log("original topic :" + state.pairingProposal.topic);
-    // assert(pairingSuccessResponse.topic == topic);
-
-    var sharedKeyAsString = await sharedKeyString(secretKey: sharedKey);
-    core.state.pairingSettled = PairingSettled(
-        topic: topic,
-        relay: pairingSuccessResponse.relay,
-        sharedKey: sharedKeyAsString,
-        self: self,
-        peer: pairingSuccessResponse.responder,
-        permissions: PairingPermissions(
-            controller: PairingPermissionsController(publicKey: publicKey),
-            pairingProposedPermissions:
-                state.pairingProposal.pairingProposedPermissions),
-        expiry: pairingSuccessResponse.expiry,
-        state: pairingSuccessResponse.state);
-    core.state.isPariringSettled = true;
-    Map<String, Map<SimpleKeyPair, PairingSettled>> other = {
-      topic: {core.state.keyPair: core.state.pairingSettled}
-    };
-    core.state.settledPairingsMap.addAll(other);
-    return topic;
-  }
-
-  static void sessionSettlement(
-      {required WcLibCore core,
-      required SessionSuccessResponse sessionSuccessResponse}) async {
-    State state = core.state;
-    var sharedKey = await getSharedKeyForPairingSettlement(
-        keyPair: core.state.keyPair,
-        responderPublicKey:
-            sessionSuccessResponse.sessionParticipant!.publicKey ?? '');
-    var topic = await getTopicOnSettlement(sharedKey: sharedKey);
-    var publicKey = state.pairingProposal.pairingProposer!.publicKey;
-    var self = SessionParticipant(
-        publicKey: publicKey,
-        appMetadata: state.sessionProposal.proposer!.metadata);
-    assert(sessionSuccessResponse.topic ==
-        topic); //if fails, know sharedKey is invalid
-
-    var sharedKeyAsString = await sharedKeyString(secretKey: sharedKey);
-
-    core.state.sessionSettled = SessionSettled(
-      topic: sessionSuccessResponse.topic,
-      relay: sessionSuccessResponse.relay,
-      expiry: sessionSuccessResponse.expiry,
-      peer: sessionSuccessResponse.sessionParticipant,
-      self: self,
-      sharedKey: sharedKeyAsString,
-      sessionState: sessionSuccessResponse.sessionState,
-      permissions: SessionPermissions(
-          pairingPermissionsController:
-              SessionPermissionsController(publicKey: publicKey),
-          sessionProposedPermissions: state.sessionProposal.permissions),
-    );
-    log("Session Settled");
-    log(topic);
-    log(core.state.settledPairingsMap.keys.first);
-    core.state.isSessionSettled = true;
-    Map<String, Map<SimpleKeyPair, PairingSettled>> other = {
-      topic: {core.state.keyPair: core.state.pairingSettled}
-    };
-    core.state.settledSessionsMap.addAll(other);
-  }
-
-  static void removeSettledSession({required WcLibCore core}) {
-    core.state.sessionSettled = SessionSettled.emptySession();
-  }
-
-  static bool isFailedResponse(Map<String, dynamic>? resp) {
-    return resp!.keys.contains("reason");
-  }
-
-  static bool isSubscriptionEvent(Map<String, dynamic> data) {
-    return data.containsKey("method") && data.containsKey("params");
-  }
-
-  static bool isWcPairingApproveEvent(JsonRpcRequest req) {
-    return req.method == Events.wcPairingApprove;
-  }
-
-  static isSubscribeEvent(Map<String, dynamic> event) {
-    return event["result"].toString().length > 6;
-  }
-
-  static raiseExceptionOnEmotyOrInvalidJsonRpcRequestPayloadParams(
-      {Params? params}) {
-    if (params?.data?.isEmpty ?? true) {
-      throw WcException(
-          type: WcErrorType.invalidValue, msg: "Params is invalid or empty");
-    }
-  }
-
-  static void removePairingProposal(WcLibCore core) {
-    core.state.pairingProposal = PairingProposal(topic: '');
-  }
-
-  static Future<String> encrypt(
-      {required String sharedKey,
-      required String message,
-      required String publicKey}) async {
-    List<int> sharedKeyBytes = utf8.encode(sharedKey);
-
-    Sha512 encAuthHash = Sha512();
-    Hash encAuthKeys = await encAuthHash.hash(sharedKeyBytes);
-
-    int partition = encAuthKeys.bytes.length ~/ 2;
-
-    var encryptionKeys = encAuthKeys.bytes.getRange(0, partition).toList();
-    var authenticationKeys = encAuthKeys.bytes
-        .getRange(partition, encAuthKeys.bytes.length)
-        .toList();
-
-    var algorithm = AesCbc.with256bits(macAlgorithm: MacAlgorithm.empty);
-    SecretKey encryptionSecretKey =
-        await algorithm.newSecretKeyFromBytes(encryptionKeys);
-    SecretKey authenticationSecretKey =
-        await algorithm.newSecretKeyFromBytes(authenticationKeys);
-
-    var messageBytes = utf8.encode(message);
-    var nonce = algorithm.newNonce();
-
-    final secret = await algorithm.encrypt(messageBytes,
-        secretKey: encryptionSecretKey, nonce: nonce);
-
-    Hmac mac = Hmac.sha256();
-    Mac messageMac = await mac.calculateMac(
-        nonce + hex.decode(publicKey) + secret.cipherText,
-        secretKey: authenticationSecretKey);
-    String hexMac = hex.encode(messageMac.bytes);
-
-    var data =
-        "${hex.encode(nonce)}$publicKey$hexMac${hex.encode(secret.cipherText)}";
-    log(data);
-    return data;
-  }
-
-//hack - if works, walletconnect team may need to format outputs.
-  static String getCommaSeparatedEncryptedDataAsHexString(
-      {required String data}) {
-    log(data);
-    int nonceEnds = 32;
-    int publicKeyEnds = 96;
-    int macEnds = 160;
-
-    String nonceStr = data.substring(0, nonceEnds);
-
-    String publicKeyStr = data.substring(nonceEnds, publicKeyEnds);
-    String macStr = data.substring(publicKeyEnds, macEnds);
-    String cipherStr = data.substring(macEnds);
-    var msg = '$nonceStr,$publicKeyStr,$macStr,$cipherStr';
-    log(msg);
-    return msg;
-  }
-
-  static Future<String> decrypt(
-      {required String sharedKey, required String message}) async {
-    String nonce, publicKey, macStr, cipherText = '';
-    if (!message.contains(',')) {
-      throw WcException(
-          type: WcErrorType.invalidValue,
-          msg:
-              "got $message. want message that contains 'iv,publicKey,mac,cipherText'");
-    }
-    var msgArray = message.split(",");
-    if (msgArray.length != 4) {
-      throw WcException(
-          type: WcErrorType.invalidValue,
-          msg:
-              "got $message with length ${msgArray.length}. want message that contains 'iv,publicKey,mac,cipherText'");
-    }
-
-    List<int> sharedKeyBytes = hexToBytes(sharedKey);
-
-    Sha512 encAuthHash = Sha512();
-    Hash encAuthKeys = await encAuthHash.hash(sharedKeyBytes);
-
-    int partition = encAuthKeys.bytes.length ~/ 2;
-
-    var decryptionKeys = encAuthKeys.bytes.getRange(0, partition).toList();
-    var authenticationKeys = encAuthKeys.bytes
-        .getRange(partition, encAuthKeys.bytes.length)
-        .toList();
-
-    var algorithm = AesCbc.with256bits(macAlgorithm: MacAlgorithm.empty);
-    SecretKey decryptionSecretKey =
-        await algorithm.newSecretKeyFromBytes(decryptionKeys);
-    SecretKey authenticationSecretKey =
-        await algorithm.newSecretKeyFromBytes(authenticationKeys);
-
-    nonce = msgArray[0];
-    publicKey = msgArray[1];
-    macStr = msgArray[2];
-    cipherText = msgArray[3];
-
-    var cipherTextBytes = hex.decode(cipherText);
-    var macStrBytes = hex.decode(macStr);
-
-    //------------ verify mac
-    Hmac mac = Hmac.sha256();
-    Mac messageMac = await mac.calculateMac(
-        hex.decode(nonce) + hex.decode(publicKey) + cipherTextBytes,
-        secretKey: authenticationSecretKey);
-
-    if (hex.encode(messageMac.bytes) != macStr) {
-      throw WcException(
-          type: WcErrorType.invalidValue,
-          msg:
-              "got mac string as ${hex.encode(messageMac.bytes)}, received '$macStr' with invalid mac");
-    }
-
-    //---------- decrypt cipherText
-    SecretBox secretBox =
-        SecretBox(cipherTextBytes, nonce: hex.decode(nonce), mac: Mac.empty);
-
-    final messageBytes =
-        await algorithm.decrypt(secretBox, secretKey: decryptionSecretKey);
-    final decodedPayload = utf8.decode(messageBytes);
-
-    return decodedPayload;
-  }
-
-  static Future<String> sha256({required String msg}) async {
-    final hashAlgorithm = Sha256();
-    Hash topicHash = await hashAlgorithm.hash(utf8.encode(msg));
-    String _hash = bytesToHex(topicHash.bytes);
-    return _hash;
-  }
-}
-
 class CAIP {
   static String caipHandshake = "caip_handshake";
   static String caipRequest = "caip_request";
-}
-
-class EtheriumMethods {
-  static const String ethSendTransaction = "eth_sendTransaction";
-  static const String ethSignTransaction = "eth_signTransaction";
-  static const String ethSign = "eth_sign";
-  static const String personalSign = "personal_sign";
-
-  static List<String> getMethodList() {
-    return [ethSendTransaction, ethSignTransaction, ethSign, personalSign];
-  }
 }
 
 class WcLibCore {
@@ -643,19 +95,17 @@ class WcLibCore {
   }
 
   disconnect({required String topic}) {
-    state.reset();
-    if (state.isPariringSettled) {
+    if (state.settledPairingsMap.containsKey(topic)) {
       JsonRpcRequest jsonRpcRequest = JsonRpcRequest(
           method: Events.wcPairingDelete,
           params: Params(data: Reason(reason: "End pairing").toJson()));
-      //required JsonRpcRequest payload,
-      // required WcLibCore core,
-      // EventCallBack? callBack
+
       Events.wcEvents[Events.wcPairingDelete]!(
           payload: jsonRpcRequest, core: state, callBack: null);
     }
     unsubscribe(topic: topic);
     _isConnected = false;
+    state.reset();
     _socketSink!.close(WebSocketStatus.normalClosure);
   }
 
@@ -683,7 +133,7 @@ class WcLibCore {
       message = await Helpers.encrypt(
           sharedKey: state.pairingSettled.sharedKey,
           message: message,
-          publicKey: state.pairingSettled.permissions!.controller.publicKey);
+          publicKey: state.pairingSettled.self!.publicKey!);
     }
 
     var jsonData = WakuPublishRequest(
@@ -692,8 +142,7 @@ class WcLibCore {
                 WakuPublishParams(message: message, topic: topic, ttl: ttl))
         .toJson();
     String data = jsonEncode(jsonData);
-    // log("publishing response");
-    // log(data);
+
     _send(data: data);
   }
 
@@ -767,13 +216,13 @@ class WcLibCore {
       },
       onError: (error) {
         log('onError $_isConnected CloseCode ${_webSocket.closeCode} $error');
-        // _resetState();
+        state.reset();
         // onFailure?.call('$error');
       },
       onDone: () {
         if (_isConnected) {
           log('onDone $_isConnected CloseCode ${_webSocket.closeCode} ${_webSocket.closeReason}');
-          // _resetState();
+          state.reset();
           // onDisconnect?.call(_webSocket.closeCode, _webSocket.closeReason);
         }
       },
@@ -782,57 +231,20 @@ class WcLibCore {
 
   Future<Map<String, dynamic>> decodeReceivedJsonRpcMessage(
       {required String message, required String topic}) async {
-    var recode = hex.decode(message);
-    String jsonString = String.fromCharCodes(recode);
-    // utf8.decode(hex.decode(message));
-    log("Decoded Received Json string  " + jsonString);
+    String jsonString;
     if (state.settledPairingsMap.containsKey(topic)) {
       log("receieved encrypted msg ");
       message =
           Helpers.getCommaSeparatedEncryptedDataAsHexString(data: message);
 
       jsonString = await decryptMessage(message: message);
+    } else {
+      var msgBytes = hex.decode(message);
+      jsonString = utf8.decode(msgBytes);
     }
-    log(jsonString);
+
+    log("Decoded Received Json string  " + jsonString);
     return jsonDecode(jsonString);
-  }
-}
-
-class State {
-  AppMetadata appMetadata;
-  UriParameters uriParameters;
-  PairingSignal pairingSignal;
-  SimpleKeyPair keyPair;
-  late PairingSettled pairingSettled;
-  late PairingProposal pairingProposal;
-  late PairingFailureResponse pairingFailureResponse;
-  late SessionProposal sessionProposal;
-  late SessionSettled sessionSettled;
-
-  //Map Settled Topics to Keypairs and settled pairings data
-
-  Map<String, Map<SimpleKeyPair, PairingSettled>> settledPairingsMap = {};
-
-  Map<String, Map<SimpleKeyPair, PairingSettled>> settledSessionsMap = {};
-
-  bool isSessionSettled = false;
-  bool isPariringSettled = false;
-
-  State(
-      {required this.uriParameters,
-      required this.appMetadata,
-      required this.pairingSignal,
-      required this.keyPair});
-
-  reset() {
-    pairingSettled = PairingSettled(topic: '', sharedKey: '');
-    sessionSettled = SessionSettled(topic: '');
-    sessionProposal = SessionProposal(
-        topic: '', signal: SessionSignal(params: Sequence(topic: '')), ttl: 0);
-    this.isPariringSettled = false;
-    this.isSessionSettled = false;
-    this.pairingProposal = PairingProposal(topic: '');
-    this.pairingFailureResponse = PairingFailureResponse();
   }
 }
 
@@ -848,7 +260,7 @@ class BlockChainIds {
 
   static List<String> getChainMethods({required BlockchainId chain}) {
     if (chain.name == etheriumMainet.name) {
-      return EtheriumMethods.getMethodList();
+      return EthereumMethods.getMethodList();
     }
 
     throw WcException(
@@ -970,79 +382,7 @@ class WcClient {
 }
 
 // class WCClient {
-//   late WebSocketChannel _webSocket;
-//   Stream _socketStream = Stream.empty();
-//   // ignore: close_sinks
-//   WebSocketSink? _socketSink;
-//   WCSession? _session;
-//   WCPeerMeta? _peerMeta;
-//   WCPeerMeta? _remotePeerMeta;
-//   int _handshakeId = -1;
-//   int? _chainId;
-//   String? _peerId;
-//   String? _remotePeerId;
-//   bool _isConnected = false;
 
-//   WCClient({
-//     this.onSessionRequest,
-//     this.onFailure,
-//     this.onDisconnect,
-//     this.onEthSign,
-//     this.onEthSignTransaction,
-//     this.onEthSendTransaction,
-//     this.onCustomRequest,
-//     this.onConnect,
-//   });
-
-//   final SessionRequest? onSessionRequest;
-//   final SocketError? onFailure;
-//   final SocketClose? onDisconnect;
-//   final EthSign? onEthSign;
-//   final EthTransaction? onEthSignTransaction, onEthSendTransaction;
-//   final CustomRequest? onCustomRequest;
-//   final Function()? onConnect;
-
-//   WCSession? get session => _session;
-//   WCPeerMeta? get peerMeta => _peerMeta;
-//   WCPeerMeta? get remotePeerMeta => _remotePeerMeta;
-//   int? get chainId => _chainId;
-//   String? get peerId => _peerId;
-//   String? get remotePeerId => _remotePeerId;
-//   bool get isConnected => _isConnected;
-//   String subscriptionId = "";
-
-//   get Id => 2;
-
-//   connectNewSession({
-//     required WCSession session,
-//     required WCPeerMeta peerMeta,
-//   }) {
-//     _connect(
-//       session: session,
-//       peerMeta: peerMeta,
-//     );
-//   }
-
-//   // connectFromSessionStore(WCSessionStore sessionStore) {
-//   //   _connect(
-//   //     fromSessionStore: true,
-//   //     session: sessionStore.session,
-//   //     peerMeta: sessionStore.peerMeta,
-//   //     remotePeerMeta: sessionStore.remotePeerMeta,
-//   //     peerId: sessionStore.peerId,
-//   //     remotePeerId: sessionStore.remotePeerId,
-//   //     chainId: sessionStore.chainId,
-//   //   );
-//   // }
-
-//   // WCSessionStore get sessionStore => WCSessionStore(
-//   //       session: _session!,
-//   //       peerMeta: _peerMeta!,
-//   //       peerId: _peerId!,
-//   //       remotePeerId: _remotePeerId!,
-//   //       remotePeerMeta: _remotePeerMeta!,
-//   //       chainId: _chainId!,
-//   //     );
 
 //   // approveSession({required List<String> accounts, int? chainId}) {
 //   //   if (_handshakeId <= 0) {
