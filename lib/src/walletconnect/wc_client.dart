@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:core';
 
 import 'package:app/src/walletconnect/chain_ids.dart';
@@ -39,8 +40,8 @@ class WcClient {
       required String relayProvider,
       required String topic,
       Map<String, EventCallBack>? callbacks}) async {
-    var topicSha = await Helpers.getSha256(data: hex.decode(topic));
-    //sha256.convert(utf8.encode()).toString();
+    var topicSha = await Helpers.getSha256(data: base64Decode(topic).toList());
+
     final algorithm = X25519();
     final keyPair = await algorithm.newKeyPair();
 

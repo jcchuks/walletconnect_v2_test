@@ -4,7 +4,7 @@ class Blockchain {
   Blockchain({required this.chains});
 
   factory Blockchain.fromJson(Map<String, dynamic> json) => Blockchain(
-        chains: json['chains'] as List<String>,
+        chains: List<String>.from(json['chains'] ?? []),
       );
 
   Map<String, dynamic> toJson() => {

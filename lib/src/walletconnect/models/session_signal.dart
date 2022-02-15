@@ -8,11 +8,11 @@ class SessionSignal {
 
   factory SessionSignal.fromJson(Map<String, dynamic> json) => SessionSignal(
         method: json['method'] as String? ?? 'pairing',
-        params: Sequence.fromJson(json['topic'] as Map<String, dynamic>),
+        params: Sequence.fromJson(json['params'] as Map<String, dynamic>),
       );
 
   Map<String, dynamic> toJson() => {
         'method': method,
-        'topic': params.toJson(),
+        'params': params.toJson(),
       };
 }

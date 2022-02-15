@@ -37,4 +37,13 @@ class JsonRpcRequest {
       };
 
   Map<String, dynamic> paramsAsJson() => params?.toJson() ?? {};
+
+  factory JsonRpcRequest.fromJsonParameter(Map<String, dynamic> json) {
+    return JsonRpcRequest(
+      method: 'empty',
+      params: json['params'] == null
+          ? null
+          : Params.fromJson(json['params'] as Map<String, dynamic>),
+    );
+  }
 }

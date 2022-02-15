@@ -124,7 +124,6 @@ class Events {
       required WcLibCore core,
       EventCallBack? callBack}) async {
     State state = core.state;
-    assert(payload.method == internalDummyMethod);
     JsonRpcRequest jsonRpcRequest = JsonRpcRequest(
         method: wcPairingPayload, params: Params(data: payload.paramsAsJson()));
     String encodedJsonRpcRequest = jsonEncode(jsonRpcRequest);
