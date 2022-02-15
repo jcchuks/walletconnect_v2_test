@@ -1,4 +1,4 @@
-// ignore_for_file: constant_identifier_names
+// ignore_for_file: constant_identifier_names, non_constant_identifier_names
 
 import 'dart:convert';
 import 'dart:math';
@@ -20,7 +20,8 @@ void main() {
   });
 
   String TEST_MESSAGE = jsonEncode(
-      JsonRpcRequest(method: "test_method", id: 1, params: Params(data: {})));
+      JsonRpcRequest(method: "test_method", id: 1, params: Params(data: {}))
+          .toJson());
   KeyPairString TEST_SELF = TEST_KEY_PAIRS["A"]!;
   const TEST_IV = "f0d00d4274a7e9711e4e0f21820b8877";
   KeyPairString TEST_PEER = TEST_KEY_PAIRS["B"]!;
