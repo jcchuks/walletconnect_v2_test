@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:convert';
 import 'dart:developer';
+import 'dart:typed_data';
 
 import 'package:app/src/walletconnect/models/json_rpc_request.dart';
 import 'package:app/src/walletconnect/models/pairing_participant.dart';
@@ -18,7 +18,21 @@ import 'package:app/src/walletconnect/wc_errors.dart';
 import 'package:app/src/walletconnect/wc_events.dart';
 import 'package:app/src/walletconnect/wc_state.dart';
 import 'package:convert/convert.dart';
+import 'package:pointycastle/paddings/pkcs7.dart';
 import 'package:cryptography/cryptography.dart';
+
+class DeserializedData {
+  final String cipher;
+  final String nonce;
+  final String mac;
+  final String publicKey;
+
+  DeserializedData(
+      {required this.cipher,
+      required this.nonce,
+      required this.mac,
+      required this.publicKey});
+}
 
 class Helpers {
   static void checkString(String? data, {String? msg}) {
@@ -71,7 +85,7 @@ class Helpers {
     return uri;
   }
 
-  static Future<SecretKey> getSharedKeyForPairingSettlement(
+  static Future<SecretKey> getSharedKey(
       {required KeyPair keyPair, required String responderPublicKey}) async {
     final algorithm = X25519();
     SimplePublicKey remotePublicKey = SimplePublicKey(
@@ -84,18 +98,14 @@ class Helpers {
 
   static Future<String> getTopicOnSettlement(
       {required SecretKey sharedKey}) async {
-    //returns sha256 hash of the shared key.
-
-    var topicSha = await Sha256().hash(await sharedKey.extractBytes());
-    var topic = topicSha.bytes;
-    return hex.encode(topic);
+    return await getSha256(data: await sharedKey.extractBytes());
   }
 
   static Future<String> pairingSettlement(
       {required WcLibCore core,
       required PairingSuccessResponse pairingSuccessResponse}) async {
     State state = core.state;
-    SecretKey sharedKey = await getSharedKeyForPairingSettlement(
+    SecretKey sharedKey = await getSharedKey(
         keyPair: core.state.keyPair,
         responderPublicKey: pairingSuccessResponse.responder!.publicKey!);
     var topic = await getTopicOnSettlement(sharedKey: sharedKey);
@@ -126,7 +136,7 @@ class Helpers {
       {required WcLibCore core,
       required SessionSuccessResponse sessionSuccessResponse}) async {
     State state = core.state;
-    var sharedKey = await getSharedKeyForPairingSettlement(
+    var sharedKey = await getSharedKey(
         keyPair: core.state.keyPair,
         responderPublicKey:
             sessionSuccessResponse.sessionParticipant!.publicKey ?? '');
@@ -194,42 +204,93 @@ class Helpers {
     core.state.pairingProposal = PairingProposal(topic: '');
   }
 
+  static int _addPadding(List<int> data, int offset) {
+    var code = (data.length - offset);
+
+    while (offset < data.length) {
+      data[offset] = code;
+      offset++;
+    }
+
+    return code;
+  }
+
+  static List<int> addPkcs7Padding({required String message}) {
+    List<int> data = utf8.encode(message).toList();
+    int msgLengthInBytes = data.length;
+    //AES 256 has a block size of 32 bytes hence find remainder
+    // pkcs5 whose block size is 8 is compatible with pkcs7 since 8 is a factor
+    // of 256.
+    const int blockSize = 8;
+    int blockModulo = msgLengthInBytes % blockSize;
+    int padRemainderBlockCount = blockSize - blockModulo;
+    data.addAll(
+        List.generate(padRemainderBlockCount, (index) => index).toList());
+
+    Uint8List bytes = Uint8List.fromList(data);
+    var paddingCount = PKCS7Padding().addPadding(bytes, msgLengthInBytes);
+    log(paddingCount.toString() +
+        " " +
+        padRemainderBlockCount.toString() +
+        " " +
+        bytes.length.toString() +
+        " " +
+        msgLengthInBytes.toString());
+    assert(paddingCount == padRemainderBlockCount);
+    assert(bytes.length == msgLengthInBytes + padRemainderBlockCount);
+    return bytes;
+  }
+
+  static Future<String> computeHmac(
+      {required List<int> nonce,
+      required List<int> publicKey,
+      required List<int> cipherBytes,
+      required SecretKey authenticationSecretKey}) async {
+    Hmac mac = Hmac.sha256();
+    List<int> payload = List.from(nonce)
+      ..addAll(publicKey)
+      ..addAll(cipherBytes);
+    Mac messageMac =
+        await mac.calculateMac(payload, secretKey: authenticationSecretKey);
+    String macStr = hex.encode(messageMac.bytes);
+    return macStr;
+  }
+
   static Future<String> encrypt(
       {required String sharedKey,
       required String message,
-      required String publicKey}) async {
+      required String publicKey,
+      String iv = ''}) async {
     List<SecretKey> keys =
         await Helpers.getEncryptionDecryptionKeys(sharedKey: sharedKey);
     SecretKey encryptionSecretKey = keys[0];
     SecretKey authenticationSecretKey = keys[1];
 
-    var messageBytes = utf8.encode(message);
+    var messageBytes =
+        utf8.encode(message); //addPkcs7Padding(message: message);
 
     var algorithm = AesCbc.with256bits(macAlgorithm: MacAlgorithm.empty);
-    List<int> nonce = algorithm.newNonce();
+    List<int> nonce = iv.isEmpty ? algorithm.newNonce() : hex.decode(iv);
 
     final secret = await algorithm.encrypt(messageBytes,
         secretKey: encryptionSecretKey, nonce: nonce);
 
-    Hmac mac = Hmac.sha256();
-    List<int> msg = List.from(nonce)
-      ..addAll(hex.decode(publicKey))
-      ..addAll(secret.cipherText);
-    Mac messageMac =
-        await mac.calculateMac(msg, secretKey: authenticationSecretKey);
+    String macStr = await computeHmac(
+        nonce: nonce,
+        publicKey: hex.decode(publicKey),
+        cipherBytes: secret.cipherText,
+        authenticationSecretKey: authenticationSecretKey);
 
-    String nonceStr = hex.encode(nonce);
-    String macStr = hex.encode(messageMac.bytes);
+    iv = hex.encode(nonce);
     String cipherTxt = hex.encode(secret.cipherText);
 
-    var data = '$nonceStr$publicKey$macStr$cipherTxt';
+    var data = '$iv$publicKey$macStr$cipherTxt';
 
     return data;
   }
 
 // @TODO - return 'msg' as custom type containing iv, pk, mac, cipher.
-  static String getCommaSeparatedEncryptedDataAsHexString(
-      {required String data}) {
+  static DeserializedData getDeserializedData({required String data}) {
     int nonceEnds = 32;
     int publicKeyEnds = 96;
     int macEnds = 160;
@@ -239,53 +300,45 @@ class Helpers {
     String publicKeyStr = data.substring(nonceEnds, publicKeyEnds);
     String macStr = data.substring(publicKeyEnds, macEnds);
     String cipherStr = data.substring(macEnds);
-    var msg = '$nonceStr,$publicKeyStr,$macStr,$cipherStr';
-
-    return msg;
+    return DeserializedData(
+        nonce: nonceStr,
+        publicKey: publicKeyStr,
+        mac: macStr,
+        cipher: cipherStr);
   }
 
 // @TODO - replace 'message' with a custom type containing iv, pk, mac, cipher.
   static Future<String> decrypt(
       {required String sharedKey, required String message}) async {
     String nonce, publicKey, macStr, cipherText = '';
-    if (!message.contains(',')) {
-      throw WcException(
-          type: WcErrorType.invalidValue,
-          msg:
-              "got $message. want message that contains 'iv,publicKey,mac,cipherText'");
-    }
-    var msgArray = message.split(",");
-    if (msgArray.length != 4) {
-      throw WcException(
-          type: WcErrorType.invalidValue,
-          msg:
-              "got $message with length ${msgArray.length}. want message that contains 'iv,publicKey,mac,cipherText'");
-    }
 
     List<SecretKey> keys =
         await Helpers.getEncryptionDecryptionKeys(sharedKey: sharedKey);
     SecretKey decryptionSecretKey = keys[0];
     SecretKey authenticationSecretKey = keys[1];
 
-    nonce = msgArray[0];
-    publicKey = msgArray[1];
-    macStr = msgArray[2];
-    cipherText = msgArray[3];
+    DeserializedData deserializedData =
+        Helpers.getDeserializedData(data: message);
+    nonce = deserializedData.nonce;
+    publicKey = deserializedData.publicKey;
+    macStr = deserializedData.mac;
+    cipherText = deserializedData.cipher;
 
     var cipherTextBytes = hex.decode(cipherText);
     log("public key: : " + publicKey);
 
     //------------ verify mac
-    Hmac mac = Hmac.sha256();
-    Mac messageMac = await mac.calculateMac(
-        hex.decode(nonce) + hex.decode(publicKey) + cipherTextBytes,
-        secretKey: authenticationSecretKey);
+    String computedMac = await computeHmac(
+        nonce: hex.decode(nonce),
+        publicKey: hex.decode(publicKey),
+        cipherBytes: cipherTextBytes,
+        authenticationSecretKey: authenticationSecretKey);
 
-    if (hex.encode(messageMac.bytes) != macStr) {
+    if (computedMac != macStr) {
       throw WcException(
           type: WcErrorType.invalidValue,
           msg:
-              "got mac string as ${hex.encode(messageMac.bytes)}, received '$macStr' with invalid mac");
+              "got mac string as $computedMac, received '$macStr' with invalid mac");
     }
 
     //---------- decrypt cipherText
@@ -297,12 +350,14 @@ class Helpers {
         await algorithm.decrypt(secretBox, secretKey: decryptionSecretKey);
     final decodedPayload = utf8.decode(messageBytes);
 
+    //log(cipherTextBytes.length.toString());
+
     return decodedPayload;
   }
 
-  static Future<String> sha256({required String msg}) async {
+  static Future<String> getSha256({required List<int> data}) async {
     final hashAlgorithm = Sha256();
-    Hash topicHash = await hashAlgorithm.hash(utf8.encode(msg));
+    Hash topicHash = await hashAlgorithm.hash(data);
     String _hash = hex.encode(topicHash.bytes);
     return _hash;
   }

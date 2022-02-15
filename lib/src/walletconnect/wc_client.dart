@@ -16,6 +16,7 @@ import 'package:app/src/walletconnect/models/session_signal.dart';
 import 'package:app/src/walletconnect/models/uri_parameters.dart';
 import 'package:app/src/walletconnect/wc_core.dart';
 import 'package:app/src/walletconnect/wc_state.dart';
+import 'package:convert/convert.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:web3dart/crypto.dart';
 
@@ -38,7 +39,7 @@ class WcClient {
       required String relayProvider,
       required String topic,
       Map<String, EventCallBack>? callbacks}) async {
-    var topicSha = await Helpers.sha256(msg: topic);
+    var topicSha = await Helpers.getSha256(data: hex.decode(topic));
     //sha256.convert(utf8.encode()).toString();
     final algorithm = X25519();
     final keyPair = await algorithm.newKeyPair();
@@ -106,7 +107,7 @@ class WcClient {
 
   // for either to disconnect a session
   Future<void> disconnect({required String topic, Reason? reason}) async {
-    var topicSha = await Helpers.sha256(msg: topic);
+    var topicSha = await Helpers.getSha256(data: hex.decode(topic));
     core.disconnect(topic: topicSha);
   }
 

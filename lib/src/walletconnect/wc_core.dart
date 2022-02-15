@@ -134,12 +134,6 @@ class WcLibCore {
     return clientCallbacks![method];
   }
 
-  Future<String> decryptMessage({required String message}) async {
-    message = await Helpers.decrypt(
-        sharedKey: state.pairingSettled.sharedKey, message: message);
-    return message;
-  }
-
   void _onWakuSubscriptionRequest(
       {required Map<String, dynamic> wakuSubscriptionJsonMap}) async {
     WakuSubscriptionRequest wakuSubscriptionRequest =
@@ -215,10 +209,8 @@ class WcLibCore {
     String jsonString;
     if (state.settledPairingsMap.containsKey(topic)) {
       log("receieved encrypted msg ");
-      message =
-          Helpers.getCommaSeparatedEncryptedDataAsHexString(data: message);
-
-      jsonString = await decryptMessage(message: message);
+      jsonString = await Helpers.decrypt(
+          sharedKey: state.pairingSettled.sharedKey, message: message);
     } else {
       var msgBytes = hex.decode(message);
       jsonString = utf8.decode(msgBytes);
