@@ -1,6 +1,7 @@
 // ignore_for_file: constant_identifier_names, non_constant_identifier_names
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:app/src/walletconnect/models/json_rpc_request.dart';
 import 'package:app/src/walletconnect/models/params.dart';
@@ -12,6 +13,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:cryptography/dart.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:app/src/walletconnect/helpers.dart';
+import 'package:x25519/x25519.dart' as x;
 
 import 'test_constants.dart';
 
@@ -40,6 +42,57 @@ void main() {
     expect(algorithm.keyPairType.publicKeyLength, 32);
   });
 
+  // test("Verify Sha256 and Sha512 of cryptography and crypto packages", () {
+
+  // });
+
+  test("Verify Key pairs C", () {
+    List<int> evePrivateKey = hex.decode(TEST_KEY_PAIRS["C"]!.privateKey);
+    List<int> evePublicKey = hex.decode(TEST_KEY_PAIRS["C"]!.publicKey);
+    print(evePublicKey.join(","));
+    var evePublicKey2 = List<int>.filled(32, 0);
+
+    x.ScalarBaseMult(evePublicKey2, evePrivateKey);
+    expect(evePublicKey, Uint8List.fromList(evePublicKey2),
+        reason: "Eve failed");
+  });
+  test("Verify Key pairs B", () {
+    List<int> bobPrivateKey = hex.decode(TEST_KEY_PAIRS["B"]!.privateKey);
+    List<int> bobPublicKey = hex.decode(TEST_KEY_PAIRS["B"]!.publicKey);
+
+    var bobPublicKey2 = List<int>.filled(32, 0);
+
+    x.ScalarBaseMult(bobPublicKey2, bobPrivateKey);
+    expect(bobPublicKey, Uint8List.fromList(bobPublicKey2),
+        reason: "Bob failed");
+  });
+  test("Verify Key pairs A", () {
+    List<int> alicePrivateKey = hex.decode(TEST_KEY_PAIRS["A"]!.privateKey);
+    List<int> alicePublicKey = hex.decode(TEST_KEY_PAIRS["A"]!.publicKey);
+
+    var alicePublicKey2 = List<int>.filled(32, 0);
+
+    x.ScalarBaseMult(alicePublicKey2, alicePrivateKey);
+
+    expect(alicePublicKey, Uint8List.fromList(alicePublicKey2),
+        reason: "Alice failed");
+  });
+  test("Verify Shared Keys pairs A & B", () {
+    List<int> alicePrivateKey = hex.decode(TEST_KEY_PAIRS["A"]!.privateKey);
+    List<int> alicePublicKey = hex.decode(TEST_KEY_PAIRS["A"]!.publicKey);
+
+    List<int> bobPrivateKey = hex.decode(TEST_KEY_PAIRS["B"]!.privateKey);
+    List<int> bobPublicKey = hex.decode(TEST_KEY_PAIRS["B"]!.publicKey);
+
+    List<int> evePrivateKey = hex.decode(TEST_KEY_PAIRS["C"]!.privateKey);
+    List<int> evePublicKey = hex.decode(TEST_KEY_PAIRS["C"]!.publicKey);
+
+    var aliceSharedKey = x.X25519(alicePrivateKey, bobPublicKey);
+    var bobSharedKey = x.X25519(bobPrivateKey, alicePublicKey);
+
+    expect(aliceSharedKey, bobSharedKey);
+  });
+
   for (var letter in [
     "A",
     "B",
@@ -49,6 +102,7 @@ void main() {
       List<int> privateKeyBytes =
           hex.decode(TEST_KEY_PAIRS[letter]!.privateKey);
       List<int> publicKeyBytes = hex.decode(TEST_KEY_PAIRS[letter]!.publicKey);
+
       SimpleKeyPair keyPair =
           await algorithm.newKeyPairFromSeed(privateKeyBytes);
 
