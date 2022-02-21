@@ -15,6 +15,7 @@ import 'package:app/src/walletconnect/models/waku_subscribe_request.dart';
 import 'package:app/src/walletconnect/models/waku_subscribe_response.dart';
 import 'package:app/src/walletconnect/models/waku_subscription_request.dart';
 import 'package:app/src/walletconnect/models/waku_unsubscribe_request.dart';
+import 'package:app/src/walletconnect/wc_crypto2.dart';
 import 'package:app/src/walletconnect/wc_errors.dart';
 import 'package:app/src/walletconnect/wc_events.dart';
 import 'package:app/src/walletconnect/wc_state.dart';
@@ -111,7 +112,7 @@ class WcLibCore {
   publish(
       {required String message, required String topic, int ttl = 86400}) async {
     if (state.settledPairingsMap.containsKey(topic)) {
-      message = await Helpers.encrypt(
+      message = await WcCrypto2.encrypt(
           sharedKey: state.pairingSettled.sharedKey,
           message: message,
           publicKey: state.pairingSettled.self!.publicKey!);
@@ -209,7 +210,7 @@ class WcLibCore {
     String jsonString;
     if (state.settledPairingsMap.containsKey(topic)) {
       log("receieved encrypted msg ");
-      jsonString = await Helpers.decrypt(
+      jsonString = await WcCrypto2.decrypt(
           sharedKey: state.pairingSettled.sharedKey, message: message);
     } else {
       var msgBytes = hex.decode(message);

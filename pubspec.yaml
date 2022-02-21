@@ -23,6 +23,7 @@ dependencies:
   cryptography: ^2.0.5
   convert: ^3.0.1
   flutter_dotenv: ^5.0.2
+  pointycastle: ^3.5.1
 
 
 

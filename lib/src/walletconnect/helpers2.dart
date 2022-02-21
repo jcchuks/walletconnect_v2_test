@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:developer';
 import 'dart:typed_data';
 
@@ -14,19 +13,15 @@ import 'package:app/src/walletconnect/models/session_permissions.dart';
 import 'package:app/src/walletconnect/models/session_settled.dart';
 import 'package:app/src/walletconnect/models/session_success_response.dart';
 import 'package:app/src/walletconnect/wc_core.dart';
-import 'package:app/src/walletconnect/wc_crypto.dart';
+import 'package:app/src/walletconnect/wc_crypto2.dart';
 import 'package:app/src/walletconnect/wc_errors.dart';
 import 'package:app/src/walletconnect/wc_events.dart';
 import 'package:app/src/walletconnect/wc_state.dart';
 import 'package:convert/convert.dart';
 
-//cryptography library pointycastle
-// import 'package:pointycastle/paddings/pkcs7.dart';
-
-//cryptography library
 import 'package:cryptography/cryptography.dart';
 
-class Helpers {
+class Helpers2 {
   static void checkString(String? data, {String? msg}) {
     if (data?.isEmpty ?? true) {
       throw WcException(type: WcErrorType.emptyValue, msg: msg);
@@ -69,8 +64,8 @@ class Helpers {
   }
 
   static Future<String> getTopicOnSettlement(
-      {required SecretKey sharedKey}) async {
-    return await WcCrypto.getSha256(data: await sharedKey.extractBytes());
+      {required List<int> sharedKey}) async {
+    return WcCrypto2.getSha256(data: Uint8List.fromList(sharedKey));
   }
 
   static Future<String> pairingSettlement(
@@ -80,7 +75,8 @@ class Helpers {
     SecretKey sharedKey = await getSharedKey(
         keyPair: core.state.keyPair,
         responderPublicKey: pairingSuccessResponse.responder!.publicKey!);
-    var topic = await getTopicOnSettlement(sharedKey: sharedKey);
+    var topic =
+        await getTopicOnSettlement(sharedKey: await sharedKey.extractBytes());
     var publicKey = state.pairingProposal.pairingProposer!.publicKey;
     var self = PairingParticipant(publicKey: publicKey);
 
@@ -112,7 +108,8 @@ class Helpers {
         keyPair: core.state.keyPair,
         responderPublicKey:
             sessionSuccessResponse.sessionParticipant!.publicKey ?? '');
-    var topic = await getTopicOnSettlement(sharedKey: sharedKey);
+    var topic =
+        await getTopicOnSettlement(sharedKey: await sharedKey.extractBytes());
     var publicKey = state.pairingProposal.pairingProposer!.publicKey;
     var self = SessionParticipant(
         publicKey: publicKey,
@@ -175,42 +172,4 @@ class Helpers {
   static void removePairingProposal(WcLibCore core) {
     core.state.pairingProposal = PairingProposal(topic: '');
   }
-
-  // static int _addPadding(List<int> data, int offset) {
-  //   var code = (data.length - offset);
-
-  //   while (offset < data.length) {
-  //     data[offset] = code;
-  //     offset++;
-  //   }
-
-  //   return code;
-  // }
-
-  // static List<int> addPkcs7Padding({required String message}) {
-  //   List<int> data = utf8.encode(message).toList();
-  //   int msgLengthInBytes = data.length;
-  //   //AES 256 has a block size of 32 bytes hence find remainder
-  //   // pkcs5 whose block size is 8 is compatible with pkcs7 since 8 is a factor
-  //   // of 256.
-  //   const int blockSize = 8;
-  //   int blockModulo = msgLengthInBytes % blockSize;
-  //   int padRemainderBlockCount = blockSize - blockModulo;
-  //   data.addAll(
-  //       List.generate(padRemainderBlockCount, (index) => index).toList());
-
-  //   Uint8List bytes = Uint8List.fromList(data);
-  //   var paddingCount = PKCS7Padding().addPadding(bytes, msgLengthInBytes);
-  //   log(paddingCount.toString() +
-  //       " " +
-  //       padRemainderBlockCount.toString() +
-  //       " " +
-  //       bytes.length.toString() +
-  //       " " +
-  //       msgLengthInBytes.toString());
-  //   assert(paddingCount == padRemainderBlockCount);
-  //   assert(bytes.length == msgLengthInBytes + padRemainderBlockCount);
-  //   return bytes;
-  // }
-
 }

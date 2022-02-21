@@ -6,8 +6,9 @@ import 'dart:typed_data';
 import 'package:app/src/walletconnect/models/json_rpc_request.dart';
 import 'package:app/src/walletconnect/models/params.dart';
 import 'package:app/src/walletconnect/models/session_proposal.dart';
-import 'package:app/src/walletconnect/models/session_proposer.dart';
+import 'package:app/src/walletconnect/wc_crypto.dart';
 import 'package:app/src/walletconnect/wc_errors.dart';
+import 'package:app/src/walletconnect/wc_utils.dart';
 import 'package:convert/convert.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:cryptography/dart.dart';
@@ -143,19 +144,19 @@ void main() {
 
   test("Verify sha256 for Topic generation", () async {
     final String hash =
-        await Helpers.getSha256(data: hex.decode(TEST_SHARED_KEY));
+        await WcCrypto.getSha256(data: hex.decode(TEST_SHARED_KEY));
     expect(hash, equals(TEST_HASHED_KEY));
   });
 
   test("Verify encryption algorithm", () async {
-    String encrypted = await Helpers.encrypt(
+    String encrypted = await WcCrypto.encrypt(
       iv: TEST_IV,
       message: TEST_MESSAGE,
       sharedKey: TEST_SHARED_KEY,
       publicKey: TEST_SELF.publicKey,
     );
     DeserializedData deserialized =
-        Helpers.getDeserializedData(data: encrypted);
+        WcCrypto.getDeserializedData(data: encrypted);
 
     expect(deserialized.nonce, equals(TEST_IV),
         reason: "Failed IV match/deserialization");
@@ -168,7 +169,7 @@ void main() {
   });
 
   test("Verify decryption algorithm", () async {
-    String decrypted = await Helpers.decrypt(
+    String decrypted = await WcCrypto.decrypt(
       message: TEST_ENCRYPTED,
       sharedKey: TEST_SHARED_KEY,
     );
@@ -181,17 +182,17 @@ void main() {
         "94BA14D48AAF8E0D3FA13E94A73C8745136EB7C3D7BA6232E6512A78D6624A04";
     String message = "WalletConnect";
 
-    String encryptedMessage = await Helpers.encrypt(
+    String encryptedMessage = await WcCrypto.encrypt(
         message: message,
         sharedKey: sharedKey,
         publicKey:
             "355957413b1693eea042918f8f346618bfdc29e9d00f2e6bbd702bc29c3e2e4d");
     DeserializedData payload =
-        Helpers.getDeserializedData(data: encryptedMessage);
+        WcCrypto.getDeserializedData(data: encryptedMessage);
     expect(payload.publicKey,
         "355957413b1693eea042918f8f346618bfdc29e9d00f2e6bbd702bc29c3e2e4d");
     String text =
-        await Helpers.decrypt(message: encryptedMessage, sharedKey: sharedKey);
+        await WcCrypto.decrypt(message: encryptedMessage, sharedKey: sharedKey);
     expect(text, message);
   });
 
@@ -202,17 +203,17 @@ void main() {
         "95BA14D48AAF8E0D3FA13E94A73C8745136EB7C3D7BA6232E6512A78D6624A04";
     String message = "WalletConnect";
 
-    String encryptedMessage = await Helpers.encrypt(
+    String encryptedMessage = await WcCrypto.encrypt(
         message: message,
         sharedKey: sharedKey1,
         publicKey:
             "355957413b1693eea042918f8f346618bfdc29e9d00f2e6bbd702bc29c3e2e4d");
     DeserializedData payload =
-        Helpers.getDeserializedData(data: encryptedMessage);
+        WcCrypto.getDeserializedData(data: encryptedMessage);
     expect(payload.publicKey,
         "355957413b1693eea042918f8f346618bfdc29e9d00f2e6bbd702bc29c3e2e4d");
     var futureDecrypt =
-        Helpers.decrypt(message: encryptedMessage, sharedKey: sharedKey2);
+        WcCrypto.decrypt(message: encryptedMessage, sharedKey: sharedKey2);
     expectLater(futureDecrypt, throwsA(isA<WcException>()));
   });
 
@@ -226,7 +227,7 @@ void main() {
         "50e98dc7a1013c3c38f76aaa80dd7ca6c4230a866298415f308c59d4285a6f48";
 
     List<SecretKey> keys =
-        await Helpers.getEncryptionDecryptionKeys(sharedKey: sharedKey);
+        await WcCrypto.getEncryptionDecryptionKeys(sharedKey: sharedKey);
     SecretKey decrypt = keys[0];
     SecretKey auth = keys[1];
 
@@ -238,7 +239,7 @@ void main() {
     String hexPayload =
         "ffbecf819a49a266b262309ad269ae4016ef8b8ef1f010d4447b7e089aac0b943d5e2ca94646ddcfa92f4e8e5778cc3e39e3e876dd95065c5899b95a98512664a8c77853c47d31c2e714e50018f3d1b525dbd2f76cde5bff8b261f343ecb3d956ad9e74819c8729fa1c77be4b5fb7d39ccc697bda421fb90d11315d828e79fca6a27316d3b09f14c7f3483b25b000820e7b64a75e5f59216e5f0ecbc4ec20c53664ad5e967026aa119a32a655e3ff3e110ca4c7e629b845b8ecf7ea6f296a79a6de3dc5794c3a51059bb08b09974501ffcf2d7fddafafd9f1b22e97b6abbb6bcd978a8a87341f33bc662c101947a06c72f6c7709a0a612f46fcd8b5fbce0bdd4c56ca330e6e2802fbf6e3830210f3c1b626863de93fd02857c615436e1b9dc7d36d45bbec8acfb24cd45c46946832d5a7cc20334fd7405dba997daf4725bc849450f197e7e9e2f5e20839ba1f77895b3cbccc279fdc0a9d40156a28ad2adcd6a8afc68f9735c4e7c22c49caf5150f243bab702a71699c9b26420668c81fc5b311488331a4456ba1baf619818b4ecfe6f6de8f80dc42a85c785aa78dd187e82faec549780051551335c651af10f89a3e37103e56a8ebf27f3054e4303a6bce88d7c082bfda897facfd952df5d3d6776370884cb04923c804c99059bb269fdbff3543d89648f39a7cc6fdad61ea0f24deeab420bc65dde6c7a6a3f5fe3775fe4a95a8bf8b70ae946696c808206baf119f0b3142d502c7ca0c102548a1263de2c04bde47aa1a716ae7b00959e300b56d6f0595d1588e07c618b914e3c76cb7d103cd8c6b91ed0aaadc2c129455c07905e5272ea4039660cb8e53a64101dae6e8737a082ac9a9b531a4cbc83e009c1722ca108a26bd193817392890b80cf519f2f14e1fc0e1b47d0b7da47d0635eace28e42456a222da5f2044895914a0b21568d49c222f55b114a558649f094012dbaaabd02ad1aae591d80b8754bb39964f4b9c235166b1ea5c80eb9870e90f073722926f823e5ca72714de10f6f4ed4072bfd3ffc4d32ec0e920edb404b7b1afa1f001d18948fe25562c9b8d52824a4fad20082f28a13e96b7277cb4e7a5ccbbf8095293892b2bac008fcee038765743fb9688abf8affd2477f7de90494ccbba94f6a88a0e0c215d5134b70f41f28754e1b236ab43ec65696fa182fa9525a70e7f42141ec38cfe57d26230b3d520ba2769517c9f8f43a161d38438079b967ab73835865b68a22d3cde7a37fccad1ee3f33ae13bb0f09b4b86ce2ee07823ba793a0fafee";
 
-    DeserializedData payload = Helpers.getDeserializedData(data: hexPayload);
+    DeserializedData payload = WcCrypto.getDeserializedData(data: hexPayload);
 
     expect(payload.nonce.length, 32);
     expect(payload.publicKey.length, 64);
@@ -247,7 +248,7 @@ void main() {
     String sharedKey =
         "b426d6b8b7a57930cae8870179864849d6e89f1e8e801f7ca9a50bc2384ee043";
     String json =
-        await Helpers.decrypt(message: hexPayload, sharedKey: sharedKey);
+        await WcCrypto.decrypt(message: hexPayload, sharedKey: sharedKey);
     Map<String, dynamic> jsonMap = jsonDecode(json);
 
     JsonRpcRequest jsonRpcRequest = JsonRpcRequest.fromJson(jsonMap);
